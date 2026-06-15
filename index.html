@@ -2567,15 +2567,25 @@ binocularsIcon.parentNode.appendChild(textBox);
                 filterFunc();
             };
             div_road_ward.appendChild(reset_road_ward);
-			// Initialize the feature group to store editable layers
-var drawnItems = new L.FeatureGroup();
+			var adminPassword = "1234"; // change this to your password
+
+function checkPassword() {
+    var entered = prompt("Enter password to perform this action:");
+    if (entered === adminPassword) {
+        return true;
+    } else {
+        alert("Wrong password!");
+        return false;
+    }
+}
+			var drawnItems = new L.FeatureGroup();
 map.addLayer(drawnItems);
 
 // Add the Leaflet Draw control to the map
 var drawControl = new L.Control.Draw({
     position: 'bottomleft',
     edit: {
-        featureGroup: drawnItems // Remove this if you don't want bulk editing
+        featureGroup: drawnItems // Allows bulk editing
     },
     draw: {
         polyline: true,
@@ -2583,14 +2593,14 @@ var drawControl = new L.Control.Draw({
         marker: true
     }
 });
-map.addControl(drawControl);
+map.addControl(drawControl); // ✅ Add control to map
 
 // Event listener for when a shape is created
 map.on(L.Draw.Event.CREATED, function (event) {
+ if (!checkPassword()) return; 
     var layer = event.layer;
     drawnItems.addLayer(layer);
 
-    // Prompt for shape attributes
     var name = prompt('Enter a name for this shape:');
     var id = prompt('Enter an ID for this shape:');
     var category = prompt('Enter a category for this shape:');
@@ -2598,7 +2608,15 @@ map.on(L.Draw.Event.CREATED, function (event) {
     var amount = prompt('Enter the amount for this shape:');
     var year = prompt('Enter the year for this shape:');
 
-    // Attach properties to the feature
+    // Calculate area for polygons
+    var area = "N/A";
+    if (layer instanceof L.Polygon || layer instanceof L.Polyline) {
+        var geojson = layer.toGeoJSON();
+        area = turf.area(geojson); // Area in square meters
+        area = (area / 10000).toFixed(2) + " ha"; // Convert to hectares
+    }
+
+    // Attach properties
     layer.feature = layer.feature || {};
     layer.feature.type = "Feature";
     layer.feature.properties = {
@@ -2607,13 +2625,14 @@ map.on(L.Draw.Event.CREATED, function (event) {
         category: category,
         type_of_work: typeOfWork,
         amount: amount,
-        year: year
+        year: year,
+        area: area
     };
 
-    // Add an edit and delete button in the popup
+    // Bind popup with area displayed
     layer.bindPopup(generatePopupContent(layer));
 
-    saveToLocalStorage(); // Save the layer to localStorage
+    saveToLocalStorage();
 });
 
 // Function to generate popup content
@@ -2626,8 +2645,9 @@ function generatePopupContent(layer) {
         <strong>Type of Work:</strong> ${props.type_of_work || ''}<br>
         <strong>Amount:</strong> ${props.amount || ''}<br>
         <strong>Year:</strong> ${props.year || ''}<br>
-        <button onclick="editLayer(${layer._leaflet_id})">Edit</button>
-        <button onclick="deleteLayer(${layer._leaflet_id})">Delete</button>
+        <strong>Area:</strong> ${props.area || 'N/A'}<br>
+        <button onclick="editLayer('${layer._leaflet_id}')">Edit</button>
+        <button onclick="deleteLayer('${layer._leaflet_id}')">Delete</button>
     `;
 }
 
@@ -2636,9 +2656,20 @@ function editLayer(layerId) {
     var layer = drawnItems.getLayer(layerId);
     if (layer) {
         layer.editing.enable();
-        alert('Editing enabled. Drag to modify and click "Save" when done.');
+        alert('Editing enabled. Drag to modify and click to save.');
+
         map.once('click', function () {
             layer.editing.disable();
+            
+            // Recalculate area if it's a polygon
+            if (layer instanceof L.Polygon || layer instanceof L.Polyline) {
+                var geojson = layer.toGeoJSON();
+                var newArea = turf.area(geojson);
+                newArea = (newArea / 10000).toFixed(2) + " ha"; // Convert to hectares
+                layer.feature.properties.area = newArea;
+            }
+
+            layer.bindPopup(generatePopupContent(layer)); // ✅ Update popup after editing
             saveToLocalStorage();
             alert('Editing saved.');
         });
@@ -2671,7 +2702,15 @@ function loadFromLocalStorage() {
             onEachFeature: function (feature, layer) {
                 drawnItems.addLayer(layer);
 
-                // Add popup with edit and delete buttons
+                // Recalculate area for polygons
+                if (layer instanceof L.Polygon || layer instanceof L.Polyline) {
+                    var geojson = layer.toGeoJSON();
+                    var area = turf.area(geojson);
+                    area = (area / 10000).toFixed(2) + " ha"; // Convert to hectares
+                    layer.feature.properties.area = area;
+                }
+
+                // ✅ Restore popups after reloading from localStorage
                 layer.bindPopup(generatePopupContent(layer));
             }
         }).addTo(map);
